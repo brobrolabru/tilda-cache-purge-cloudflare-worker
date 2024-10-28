@@ -3,7 +3,7 @@ class CloudflareAPI {
 		this.token = token;
 	}
 
-	async purgeCacheForUrl(zoneId, url) {
+	async purgeCacheForUrls(zoneId, urls) {
 		const cloudflareUrl = `https://api.cloudflare.com/client/v4/zones/${zoneId}/purge_cache`;
 		const response = await fetch(cloudflareUrl, {
 			method: 'POST',
@@ -11,12 +11,12 @@ class CloudflareAPI {
 				'Authorization': `Bearer ${this.token}`,
 				'Content-Type': 'application/json'
 			},
-			body: JSON.stringify({ files: [url] })
+			body: JSON.stringify({ files: urls })
 		});
 		const result = await response.json();
 
 		if (response.ok) {
-			console.log(`Cache purged successfully for ${url}`);
+			console.log(`Cache purged successfully for ${urls.join(', ')}`);
 		} else {
 			console.error("Failed to purge cache:", result);
 		}
@@ -58,13 +58,13 @@ class TildaAPI {
 		}
 	}
 
-	async getPageFilename(pageId) {
+	async getPageFilenames(pageId) {
 		const pageInfoUrl = `https://api.tildacdn.info/v1/getpage/?publickey=${this.publicKey}&secretkey=${this.secretKey}&pageid=${pageId}`;
 		const pageResponse = await fetch(pageInfoUrl);
 		const pageData = await pageResponse.json();
 
-		if (pageData.status === "FOUND" && pageData.result && (pageData.result.alias || pageData.result.filename)) {
-			return pageData.result.alias || pageData.result.filename;
+		if (pageData.status === "FOUND" && pageData.result && pageData.result.filename) {
+			return [ pageData.result.filename, pageData.result.alias ]
 		} else {
 			throw new Error('Failed to retrieve page filename');
 		}
@@ -93,11 +93,11 @@ export default {
 		try {
 			const customDomain = await tilda.getProjectDomain(projectId);
 			const zoneId = await cf.getZoneId(customDomain);
-			const pageFilename = await tilda.getPageFilename(pageId);
-			const fullUrl = `https://${customDomain}/${pageFilename}`;
-			await cf.purgeCacheForUrl(zoneId, fullUrl);
+			const pageFilenames = await tilda.getPageFilenames(pageId);
+			const urls = pageFilenames.map(pageFilename => `https://${customDomain}/${pageFilename}`);
+			await cf.purgeCacheForUrls(zoneId, urls);
 
-			return new Response(`Cache purged for ${fullUrl}`, { status: 200 });
+			return new Response(`Cache purged for ${urls.join(', ')}`, { status: 200 });
 		} catch (error) {
 			console.error(error);
 
