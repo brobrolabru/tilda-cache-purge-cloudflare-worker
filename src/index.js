@@ -22,6 +22,25 @@ class CloudflareAPI {
 		}
 	}
 
+	async purgeCacheForZone(zoneId) {
+		const cloudflareUrl = `https://api.cloudflare.com/client/v4/zones/${zoneId}/purge_cache`;
+		const response = await fetch(cloudflareUrl, {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${this.token}`,
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({"purge_everything": true})
+		});
+		const result = await response.json();
+
+		if (response.ok) {
+			console.log(`Cache purged successfully for ${zoneId}`);
+		} else {
+			console.error("Failed to purge cache:", result);
+		}
+	}
+
 	async getZoneId(domain) {
 		const url = `https://api.cloudflare.com/client/v4/zones?name=${domain}`;
 		const response = await fetch(url, {
@@ -94,10 +113,19 @@ export default {
 			const customDomain = await tilda.getProjectDomain(projectId);
 			const zoneId = await cf.getZoneId(customDomain);
 			const pageFilenames = await tilda.getPageFilenames(pageId);
-			const urls = pageFilenames.map(pageFilename => `https://${customDomain}/${pageFilename}`);
-			await cf.purgeCacheForUrls(zoneId, urls);
 
-			return new Response(`Cache purged for ${urls.join(', ')}`, { status: 200 });
+			const commonPagesAliases = ['header', 'footer'];
+
+			if (pageFilenames.some(page => commonPagesAliases.includes(page))) {
+				await cf.purgeCacheForZone(zoneId)
+
+				return new Response(`Cache purged for ${customDomain}`, { status: 200 });
+			} else {
+				const urls = pageFilenames.map(pageFilename => `https://${customDomain}/${pageFilename}`);
+				await cf.purgeCacheForUrls(zoneId, urls);
+
+				return new Response(`Cache purged for ${urls.join(', ')}`, { status: 200 });
+			}
 		} catch (error) {
 			console.error(error);
 
